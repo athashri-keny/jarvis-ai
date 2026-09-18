@@ -2,8 +2,10 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import { tool } from "@langchain/core/tools";
 import { END, interrupt, MessagesValue, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
+import { log } from "console";
 import { Zen_Tokyo_Zoo } from "next/font/google";
 import { NextResponse , NextRequest } from "next/server";
+import { start } from "repl";
 import z from "zod";
 
 
@@ -22,6 +24,9 @@ const state = new StateSchema({
 const fetchEmail = tool(async() => {
 
     // TODO: actually fetch do here
+
+    
+
 
 
 }, {
@@ -62,7 +67,7 @@ const modelWithTools = llmModel.bindTools(tools)
 
 
 
-// this is the first llm call (like giving the context what are you about)
+// this is the first llm call (like giving the context what are you about role etc)
 const llmCall = async(state:any) => {
 
     const res = await modelWithTools.invoke([
@@ -115,7 +120,7 @@ const toolNode = async(state:any) => {
   // looping through the toolcalls to call the a singal tool 
     for(const toolCall of lastMessage.tool_calls ?? []) {
 
-        // looking for the which tool to call fetching it by name
+        // looking for the which tool to call fetching it by name (accessing it)
         const tool = toolsbyName[toolCall.name] as any // this contains the whole tool
 
       console.log("Tool" ,tool)
@@ -132,16 +137,20 @@ const toolNode = async(state:any) => {
     return {messages: results}
 }
 
+// console.log(MessagesValue.reducer)
 
 //
 
-const agent = new StateGraph(state)
+const agent: any = new StateGraph(state)
 .addNode("llmCall" , llmCall)
 .addNode("ToolNode" , toolNode)
 .addEdge(START , "llmCall")
 .addConditionalEdges('llmCall' , shouldContinue , ['ToolNode' , END])
 .addEdge('ToolNode' , 'llmCall')
 .compile()
+
+
+
 
 
 
@@ -155,13 +164,32 @@ export async function POST(req: NextRequest) {
 
     const {message} = await req.json()
 
-    const resuult = await agent.invoke({
-        messages: [new HumanMessage(message)]
-    })
+    console.log("Message recevied from frontend" , message)
 
-    return NextResponse.json({
-        reply: resuult
-    })
+
+    // this Readble Stream always required the data in bytes not in string
+    const stream: any = new ReadableStream({
+
+        async start(controller) {
+
+            const encoder = new TextEncoder() // // converts string → bytes, required for HTTP responses
+
+              // this awaits (pauses) for the next message(word) to stream word by word 
+              
+          for await(const [messageChunk , metadata] of await agent.stream(
+        {messages: new HumanMessage(message)}, 
+        {streamMode: "messages"})
+
+    ) if (messageChunk.content) {
+        controller.enqueue(encoder.encode(messageChunk.content)) // this is converts into numbers (ASCII value) and pushing the each word immediately
+    }
+    // closing the controller 
+    controller.close()
+}
+})
+   return new NextResponse(stream, {
+  headers: {"Content-Type": "text/plain; charset=utf-8"}
+})
 
 
     } catch (error) {
