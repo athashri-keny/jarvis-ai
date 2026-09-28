@@ -23,7 +23,6 @@ function Dashboard() {
     const chat = async() => {
 
         const userMessage: ChatMessage = {role: 'Human' , content: input}
-
       
         // setting all the prevoous messages + the user message
         setmessages((prev) => [...prev , userMessage]) // RE-RENDER
