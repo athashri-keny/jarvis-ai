@@ -5,7 +5,6 @@ import { ChatOpenAI } from "@langchain/openai";;
 import { NextResponse , NextRequest } from "next/server";
 import z from "zod";
 import {google} from 'googleapis'
-import { EmailSchema } from "@/Schemas/EmailSchema";
 import { MemorySaver } from "@langchain/langgraph";
 import { SendAIEmail } from "@/lib/Emailtranspoter";
  
@@ -18,8 +17,6 @@ const state = new StateSchema({
     messages: MessagesValue // this MessageValue uses reducer function to append the messages instead of override everystate when adding a new message
 })
 
-type Email = z.infer<typeof EmailSchema>;
-
 
 // creating a object of the user using 0auth
 export const oAuthClient = new google.auth.OAuth2(
@@ -31,9 +28,8 @@ export const oAuthClient = new google.auth.OAuth2(
 const gmail = google.gmail({ version: "v1", auth: oAuthClient });
 
 // setting the crendailts of the user(which user to fetch gmails)
-
 oAuthClient.setCredentials({
-    access_token: process.env.GOOGLE_ACCESS_TOKEN,
+    // access_token: process.env.GOOGLE_ACCESS_TOKEN,
     refresh_token: process.env.GOOGLE_REFRESH_TOKEN
 })
 
@@ -48,25 +44,54 @@ const fetchEmail = tool(async() => {
 
     const ListUnReadMsg = await gmail.users.messages.list({
         userId: "me",
-        q: 'is:unread',
-        maxResults: 1 // TODO: write 10 here and loop through the to get each id fetch it
+         q: "is:unread category:primary -category:promotions -category:social",
+        maxResults: 2 // TODO: write 10 here and loop through the to get each id fetch it
     })
 
+    // console.log("ListUnreadMessages Gott" , ListUnReadMsg)
 
-    const MessageId = ListUnReadMsg?.data?.messages?.[0]?.id
+
+    const MessageId = ListUnReadMsg?.data?.messages
 
     if (!MessageId) {
       throw new Error("No unread messages found.");   
     }
 
     
-  // Fetch the full message using that ID 
-  const Msg = await gmail.users.messages.get({
-    userId: 'me',
-    id: MessageId,
-    format: 'full'
-  })
+  // Fetch the full message using that ID
+  
+  // .map() fires them all at once. Promise.all() only waits for them to finish other wise without Promise 
+  // the map function will split out only [Promise] , [Promuise]
 
+  const AllMessageIds = await Promise.all(
+    // using {} this to only get the id not the id object
+  MessageId.map(async ({ id }) => {
+    const Msg = gmail.users.messages.get({
+      userId: "me",
+      id,         
+      format: "full",
+    });
+    return Msg;
+  })
+)
+//   console.log("All MessageIds" , AllMessageIds)
+
+  const MessagePayloadInfo = AllMessageIds.map((singlepayload) => singlepayload.data.payload?.headers
+)
+const Body = AllMessageIds.map((singleBody) => singleBody.data.payload?.parts?.map((singleBodyy) => singleBodyy.body))
+
+
+// this messasgePayload is an array inside array 
+const emailsInfo = MessagePayloadInfo.map((headers: any) => {
+  const subject = headers.find((h: any) => h.name === "Subject")?.value;
+  const from = headers.find((h: any) => h.name === "From")?.value;
+  return { subject, from };
+});
+
+
+const subject = emailsInfo.map((h) => h.subject)
+const from = emailsInfo.map((h) => h.from) 
+  
    // THIS HEADERS CONTAINS ALL THE DATA THAT IS NEEDED SUBJECT , FROM , BODY
 
 //   console.log(  "Message from the fetch" , Msg) 
@@ -74,20 +99,20 @@ const fetchEmail = tool(async() => {
 //   console.log("Headers" ,  Msg.data.payload?.headers)
 // //   console.log("Body" , Msg.data.payload?.body)
 
-  const Headers = Msg.data.payload?.headers
+//   const Headers = Msg.data.payload?.headers
 
   
-  const subject = Headers?.find((h) => h.name === 'Subject')?.value
-  const From = Headers?.find((h) => h.name === 'From')?.value 
+//   const subject = Headers?.find((h) => h.name === 'Subject')?.value
+//   const From = Headers?.find((h) => h.name === 'From')?.value 
 
 //   // decoding the body
-  const zippedBody = Msg?.data?.payload?.parts?.[0]?.body?.data || ""
+  const zippedBody = Body || ""
   // unzipped the body using the Buffer which decodes it
-  const unzippBody = Buffer.from(zippedBody , "base64").toString('utf-8')
+  const unzippBody = Buffer.from(zippedBody, "base64").toString('utf-8')
   
  return {
      subject: subject,
-     from: From,
+     from: from,
      body: unzippBody,
  }
 }, {
@@ -98,11 +123,6 @@ const fetchEmail = tool(async() => {
 
 
 const SendEmail = tool(async ({body , subject , Mailto}) => {
-
-    
-     console.log("MailTo from tool" , Mailto)
-     console.log("body from tool" , body)
-console.log("subject from tool" , subject)
 
     await SendAIEmail(Mailto ,  body , subject)
     
@@ -119,9 +139,116 @@ console.log("subject from tool" , subject)
 })
 
 
+// for Calender tool
+const Calender = google.calendar({version: 'v3' , auth: oAuthClient})
+
+oAuthClient.setCredentials({
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    });
 
 
-const tools = [fetchEmail , SendEmail]
+// this tool is only for fetching the Upcoming events 
+  const Fetch_Events = tool(async({}) => {
+
+  // Tokens you saved after the user logged in
+    
+
+  const events: any = await Calender.events.list({
+    calendarId: 'primary',
+    timeMin: new Date().toISOString(),
+    maxResults: 5,
+    singleEvents: true,
+    orderBy: 'startTime',
+    eventTypes: 'default' // add further tools if needed
+  })
+
+  console.log("events " , events.data.items)
+
+  const AllUpcomingEvents = events.data.items?.map((e: any) =>  ({
+    title: e.summary,
+    StartDate: e.start?.dateTime ?? e.start?.date,
+    // EndDate: e.end?.dateTime ?? e.end?.date,
+    location: e.location,
+    // description: e.description
+  }))
+
+    return {AllUpcomingEvents}
+  } , {
+    name: "Fetch_Events",
+    description: "Fetch the events (not birhtdays) from the google calender",
+    schema: z.object({}) // Input parameters
+  })
+
+
+  // for upcoming birthdays of the frinds
+
+  const Fetch_Birthday = tool(async({}) => {
+
+const events: any = await Calender.events.list({
+    calendarId: 'primary',
+    timeMin: new Date().toISOString(),
+    maxResults: 5,
+    singleEvents: true,
+    orderBy: 'startTime',
+    eventTypes: 'birthday' // add further events if needed
+  })
+
+console.log("events " , events.data.items)
+
+const AllUpcomingBirthdays = events.data.items?.map((e: any) =>  ({
+    title: e.summary,
+    StartDate: e.start?.dateTime ?? e.start?.date,
+    // EndDate: e.end?.dateTime ?? e.end?.date,
+    location: e.location,
+    // description: e.description
+  }))
+ 
+  return {AllUpcomingBirthdays}
+
+  } , {
+    name: 'Fetch_Birthdays',
+    description: "Fetch the birthdays from the google calender (not the events)",
+    schema: z.object({})
+  })
+
+
+// for creating events 
+const CreateEvent = tool(async({name , description , StartDate , EndTime}) => {
+
+
+  console.log("Name of the event "  , name)
+  console.log("Description of the event "  , description)
+  console.log("StartDate " , StartDate)
+  console.log("EndTIme"  , EndTime)
+  
+  // string -> Date here
+  const AddEvent = await Calender.events.insert({
+  calendarId: 'primary',
+  requestBody: {
+    summary: name,
+    description: description,
+    start: {dateTime: StartDate , timeZone: 'Asia/Kolkata'},
+    end: {dateTime: EndTime , timeZone: 'Asia/Kolkata'},
+  }      
+  })
+
+  console.log("Added Event " , AddEvent)
+
+  return {AddEvent}
+
+} , {
+  name: "Create_event",
+  description: "Create a event in the google calender",
+  schema: z.object({
+    name: z.string().describe("Name of the event"),
+       StartDate: z.string().describe("Start date and time in ISO 8601 format, e.g. 2026-10-05T10:00:00+05:30"),
+    description: z.string().describe("Description of the event").optional(),
+    EndTime: z.string().describe("Endtime date and time in ISO 8601 format, e.g. 2026-10-05T10:00:00+05:30")
+  })
+})
+
+
+const tools = [fetchEmail , SendEmail , Fetch_Events , CreateEvent , Fetch_Birthday] // this converts all the zodSchema into Json schema and send it to llm
 
 // tools.map() converts each tool into a [name, tool] pair
     // Object.fromEntries() converts those pairs into an object 
@@ -137,14 +264,22 @@ const modelWithTools = llmModel.bindTools(tools)
 // this is the first llm call (like giving the context what are you about role etc)
 const llmCall = async(state:any) => {
 
+  const today = new Date().toLocaleString("en-IN", {
+  timeZone: "Asia/Kolkata",
+  dateStyle: "full",
+  timeStyle: "short",
+});
+
     // console.log("messages value" , MessagesValue)
     
     const res = await modelWithTools.invoke([
         new SystemMessage(
-            `You are Javis, an email assistant of athashri keny.
+            `You are Javis, an email assistant of athashri keny 
+            The current date and time is ${today} (IST). 
+            .
 - Use the Fetch_Email tool to read emails.
 Drafting and sending are two separate steps.
-- When the user asks to "draft" or "write" a reply, ONLY show the draft in chat. Do NOT call Send_Email.
+- When the user asks to "draft" or "write" a reply, ONLY show the draft in chat
 - Call Send_Email only after you have shown a draft AND the user's next message explicitly says to send it (e.g. "send it", "yes send").
 - A request to draft is never permission to send.
 `
@@ -234,9 +369,7 @@ const agent: any = new StateGraph(state)
 .addEdge(START , "llmCall")
 .addConditionalEdges('llmCall' , shouldContinue , ['ToolNode' , END])
 .addEdge('ToolNode' , 'llmCall')
-
 .compile({checkpointer}) // this passing the checkpointer attaches saves system to the graph
-
 
 
 
