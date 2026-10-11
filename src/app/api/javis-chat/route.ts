@@ -7,6 +7,8 @@ import z from "zod";
 import {google} from 'googleapis'
 import { MemorySaver } from "@langchain/langgraph";
 import { SendAIEmail } from "@/lib/Emailtranspoter";
+import Memory from "@/Models/Memory";
+import dbconnect from "@/lib/DbConnect";
  
 
 // Main LLM (openAI)
@@ -27,7 +29,7 @@ export const oAuthClient = new google.auth.OAuth2(
 
 const gmail = google.gmail({ version: "v1", auth: oAuthClient });
 
-// setting the crendailts of the user(which user to fetch gmails)
+// setting the crendailts of the user (which user to fetch gmails)
 oAuthClient.setCredentials({
     // access_token: process.env.GOOGLE_ACCESS_TOKEN,
     refresh_token: process.env.GOOGLE_REFRESH_TOKEN
@@ -35,7 +37,7 @@ oAuthClient.setCredentials({
 
 
 // defining tools
-const fetchEmail = tool(async() => {
+export const fetchEmail = tool(async() => {
 
     // TODO: actually fetch do here
 
@@ -76,8 +78,7 @@ const fetchEmail = tool(async() => {
 )
 //   console.log("All MessageIds" , AllMessageIds)
 
-  const MessagePayloadInfo = AllMessageIds.map((singlepayload) => singlepayload.data.payload?.headers
-)
+  const MessagePayloadInfo = AllMessageIds.map((singlepayload) => singlepayload.data.payload?.headers)
 const Body = AllMessageIds.map((singleBody) => singleBody.data.payload?.parts?.map((singleBodyy) => singleBodyy.body))
 
 
@@ -121,12 +122,10 @@ const from = emailsInfo.map((h) => h.from)
    schema: z.object({})
 })
 
-
-const SendEmail = tool(async ({body , subject , Mailto}) => {
+// for sending email 
+ export const SendEmail = tool(async ({body , subject , Mailto}) => {
 
     await SendAIEmail(Mailto ,  body , subject)
-    
-
     return {}
 }, {
   name: "Send_Email",
@@ -141,14 +140,17 @@ const SendEmail = tool(async ({body , subject , Mailto}) => {
 
 // for Calender tool
 const Calender = google.calendar({version: 'v3' , auth: oAuthClient})
+// for contact tool 
+const Contact = google.people({version: 'v1' , auth: oAuthClient})
 
 oAuthClient.setCredentials({
       refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
     });
 
 
+    
 // this tool is only for fetching the Upcoming events 
-  const Fetch_Events = tool(async({}) => {
+  export const Fetch_Events = tool(async({}) => {
 
   // Tokens you saved after the user logged in
     
@@ -184,6 +186,8 @@ oAuthClient.setCredentials({
 
   const Fetch_Birthday = tool(async({}) => {
 
+    console.log("Fetch Bithday Tool invoked")
+
 const events: any = await Calender.events.list({
     calendarId: 'primary',
     timeMin: new Date().toISOString(),
@@ -201,6 +205,7 @@ const AllUpcomingBirthdays = events.data.items?.map((e: any) =>  ({
     // EndDate: e.end?.dateTime ?? e.end?.date,
     location: e.location,
     // description: e.description
+    ContactId: e.birthdayProperties.contact // for getting the contact details 
   }))
  
   return {AllUpcomingBirthdays}
@@ -213,7 +218,7 @@ const AllUpcomingBirthdays = events.data.items?.map((e: any) =>  ({
 
 
 // for creating events 
-const CreateEvent = tool(async({name , description , StartDate , EndTime}) => {
+export const CreateEvent = tool(async({name , description , StartDate , EndTime}) => {
 
 
   console.log("Name of the event "  , name)
@@ -248,7 +253,80 @@ const CreateEvent = tool(async({name , description , StartDate , EndTime}) => {
 })
 
 
-const tools = [fetchEmail , SendEmail , Fetch_Events , CreateEvent , Fetch_Birthday] // this converts all the zodSchema into Json schema and send it to llm
+export const fetchFullContactDetails = async(contactId : any) => {
+
+  console.log("ContactId found " , contactId)
+
+ const res =  await Contact.people.get({
+  resourceName: contactId,
+  personFields: 'names,phoneNumbers'
+ }) 
+
+//  console.log("Contact Number found " , res.data.phoneNumbers?.map((e) => e.canonicalForm))
+
+ const contactNumber = res.data.phoneNumbers?.map((e) =>  e.canonicalForm)
+
+ console.log("Contact Number found " , contactNumber)
+
+ return contactNumber
+}
+
+// WHATAPP tools
+export const Send_BirthDay_wish_On_Whatapp = tool(async({name , ContactID , Wishes}) => {
+
+  console.log("ContactId" , ContactID)
+
+ const contactNumber =  await fetchFullContactDetails(ContactID)
+
+ console.log("COntact number found (from the tool call " , contactNumber)
+
+
+ // this encodeURLComponent turns normal string in to url
+  const Link = `https://wa.me/${contactNumber}?text=${encodeURIComponent(Wishes)}`
+
+  console.log("Link" , Link)
+
+  return {Link  }
+} , {
+  name: "Send_BirthDay_wish_on_Whatapp",
+  description: "Send a birthday wish to a contact ANd Provide the Whatapp link generated through the tool call in the chat so the User can click on it and open whatap Reply in plain text and put the full WhatsApp link on its own line",
+  schema: z.object({
+    name: z.string(),
+    ContactID: z.string(),
+    Wishes: z.string()
+  })
+})
+
+// memory saving tool 
+
+
+// TODO: if the memory makes large in size use RAG
+ export const SaveMemory = tool(async function({fact , category}) {
+
+  await dbconnect()
+
+  console.log("Fact" , fact)
+  console.log("Category" , category)
+
+  console.log("Save memory tool invoked")
+
+ const res = await Memory.create({UserID: 'Athashri' , fact , category})
+
+ return {res}
+
+} , {
+  name: "SaveMemory",
+  description: "Save a lasting fact about the user: preferences, goals, people, routines. Do NOT save temporary things like today's task.",
+  schema: z.object({
+    fact: z.string(),
+    category: z.enum(['goal' , 'routine' , 'preference' , 'general']),
+  })
+})
+
+
+
+
+const tools = [fetchEmail , SendEmail , Fetch_Events , CreateEvent , Fetch_Birthday , Send_BirthDay_wish_On_Whatapp , SaveMemory] // this converts all the zodSchema into Json schema and send it to llm
 
 // tools.map() converts each tool into a [name, tool] pair
     // Object.fromEntries() converts those pairs into an object 
@@ -264,6 +342,8 @@ const modelWithTools = llmModel.bindTools(tools)
 // this is the first llm call (like giving the context what are you about role etc)
 const llmCall = async(state:any) => {
 
+  await dbconnect()
+
   const today = new Date().toLocaleString("en-IN", {
   timeZone: "Asia/Kolkata",
   dateStyle: "full",
@@ -271,17 +351,49 @@ const llmCall = async(state:any) => {
 });
 
     // console.log("messages value" , MessagesValue)
+  
+    const memories = await Memory.find({}) 
+
+    // console.log("Memories found " , memories)
+
+const UserContext = memories.map((e) => `- [${e.category}] ${e.fact} , ${e.createdAt.toLocaleString()}`).join("\n");
+
+// console.log("User Context" , UserContext)
     
-    const res = await modelWithTools.invoke([
+  const res = await modelWithTools.invoke([
         new SystemMessage(
-            `You are Javis, an email assistant of athashri keny 
-            The current date and time is ${today} (IST). 
-            .
+            `
+You are Jarvis, an email assistant of Athashri Keny.
+The current date and time is ${today} (IST).
+
+
+
+EMAIL RULES
 - Use the Fetch_Email tool to read emails.
-Drafting and sending are two separate steps.
-- When the user asks to "draft" or "write" a reply, ONLY show the draft in chat
-- Call Send_Email only after you have shown a draft AND the user's next message explicitly says to send it (e.g. "send it", "yes send").
+- Drafting and sending are two separate steps.
+- When the user asks to "draft" or "write" a reply, ONLY show the draft in chat.
+- Call Send_Email only after you have shown a draft AND the user's next message
+  explicitly says to send it (e.g. "send it", "yes send").
 - A request to draft is never permission to send.
+
+MEMORY RULES
+- You have a Save_Memory tool. Call it automatically, without being asked,
+  when the user shares a lasting fact or preference about themselves
+  (likes, dislikes, goals, habits, important people, important dates).
+- Do NOT save small talk, one-off requests, or passwords and other secrets.
+- Do NOT save the contents of emails you fetched. Only save what the user
+  says about themselves.
+- After calling Save_Memory, confirm in one short sentence. Never say you
+  saved something unless the tool call actually succeeded.
+
+Memory examples:
+- "I love chocolates" -> Save_Memory("User loves chocolates")
+- "My sister's birthday is June 5" -> Save_Memory("Sister's birthday is June 5")
+- "Check my latest email" -> do not save, just use Fetch_Email
+- "ok thanks" -> do not save
+
+
+the Context about the user ${UserContext}
 `
         ),
         ...state.messages,  // giving all the full conversation history
@@ -395,8 +507,8 @@ export async function POST(req: NextRequest) {
             const encoder = new TextEncoder() // // converts string → bytes, required for HTTP responses
 
               // this awaits (pauses) for the next message(word) to stream word by word  
-          for await(const [messageChunk , metadata] of await agent.stream(
-        {messages: new HumanMessage(message)},
+          for await(const [MessageChunk , metadata] of await agent.stream(
+        {messages: new HumanMessage(message)},  
         {
             streamMode: "messages",
             // giving the chat therad_id 
@@ -404,11 +516,13 @@ export async function POST(req: NextRequest) {
         })
     )
     // NOTE: here the  MessageChunk is a instance of AIMessageChunk (reply from the ai)
-    // getType is a function inside every class object (of langgraph) that returuns a string which defines what type of message it is 
-    if (messageChunk.getType() === 'ai') {
+    // getType is a function inside every class object (of langgraph) that returuns a string which defines what type of message it is
+
+if (MessageChunk.getType() === 'ai') {
         // console.log("MessageChunkk" , messageChunk)
-        controller.enqueue(encoder.encode(messageChunk.content)) // this is converts into numbers (ASCII value) and pushing the each word immediately
-    }
+        controller.enqueue(encoder.encode(MessageChunk.content)) // this is converts into numbers (ASCII value) and pushing the each word immediately
+      }
+    
     // closing the controller 
     controller.close()
 }

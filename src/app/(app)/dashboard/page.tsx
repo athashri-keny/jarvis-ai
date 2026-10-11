@@ -1,5 +1,6 @@
 "use client"
 
+import { ChatPanel } from '@/components/ChanelPanel'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Input } from '@/components/ui/input'
@@ -47,6 +48,8 @@ function Dashboard() {
              // LOOP
             for await (const singleChunk of res.body as any) {
              
+              // console.log("Single chunk before decoding" , singleChunk)
+
               result += decode.decode(singleChunk)
 
               console.log("Single Chunk from res (after decoding)" , result)
@@ -60,7 +63,6 @@ function Dashboard() {
                 updated[updated.length - 1] = { role: 'AI', content: result }
                 return updated
               })
-
             }
         
         } catch (error) {
@@ -68,47 +70,17 @@ function Dashboard() {
         }
     }
 
-
-
-
-
-
-
-
   return (
-    <div className='flex min-h-screen w-full items-center justify-center bg-black px-10'>
-
-      <div className='flex w-full max-w-sm flex-col gap-6 py-33'>
-    
-         {messages.map((msg, i) => (
-        <div key={i}>
-          <b>{msg.role === "Human" ? "You" : "AI"}</b> 
-          <Message align={msg.role === 'Human' ? 'end' : undefined}>
-          <MessageAvatar>
-            <Avatar>
-              <AvatarImage src={msg.role === 'Human' ? 'https://api.dicebear.com/9.x/bottts/svg?seed=human' : 'https://api.dicebear.com/9.x/bottts/svg?seed=assistant'} alt="@shadcn" />
-              <AvatarFallback>CN</AvatarFallback>
-            </Avatar>
-          </MessageAvatar>
-          <MessageContent className='bg-zinc-900 text-white'>
-            <Bubble>
-                <BubbleContent>
-                  {msg.content}
-                </BubbleContent>
-            </Bubble>
-          </MessageContent>
-        </Message>
-        </div>
-
-        
-      ))}
-               <Input
-                  value={input}
-                onChange={(e) => setinput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && chat()}
-                placeholder='Ask anything' className='text-white'/>
-      </div>
-    </div>
+   <div className="h-dvh w-full bg-black">
+  <ChatPanel
+    messages={messages}
+    input={input}
+    onInputChange={setinput}
+    onSend={chat}
+    // isLoading={loading}  // optional: pass it if you already track a loading state
+  />
+</div>
+ 
   )
 }
 

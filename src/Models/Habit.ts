@@ -23,8 +23,7 @@ const HabitSchema = new Schema<Habit>({
     },
     Date: {
         type: Date,
-        required: true,
-        unique: true
+        required: true
     }
 } , {timestamps: true})
 
