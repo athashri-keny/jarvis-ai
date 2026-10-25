@@ -41,6 +41,9 @@ export const fetchEmail = tool(async() => {
   const AllMessageIds = await Promise.all(
     // using {} this to only get the id not the id object
   MessageId.map(async ({ id }) => {
+    if (!id) {
+      throw new Error("Unread message is missing an ID.");
+    }
     const Msg = gmail.users.messages.get({
       userId: "me",
       id,         
@@ -52,7 +55,8 @@ export const fetchEmail = tool(async() => {
 //   console.log("All MessageIds" , AllMessageIds)
 
   const MessagePayloadInfo = AllMessageIds.map((singlepayload) => singlepayload.data.payload?.headers)
-const Body = AllMessageIds.map((singleBody) => singleBody.data.payload?.parts?.map((singleBodyy) => singleBodyy.body))
+
+const Body: any = AllMessageIds.map((singleBody) => singleBody?.data?.payload?.parts?.map((singleBodyy) => singleBodyy?.body))
 
 
 // this messasgePayload is an array inside array 
