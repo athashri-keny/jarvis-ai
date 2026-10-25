@@ -11,9 +11,13 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
+    "@clerk/nextjs": "^7.9.19",
     "@langchain/core": "^1.2.18",
     "@langchain/langgraph": "^1.4.13",
     "@langchain/openai": "^1.5.11",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.39.0",
+    "@vercel/functions": "^3.10.3",
     "ai": "^7.0.101",
     "axios": "^1.20.0",
     "class-variance-authority": "^0.7.1",

@@ -1,4 +1,4 @@
-import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { END,  MessagesValue, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";;
 import { NextResponse , NextRequest } from "next/server";
@@ -17,11 +17,14 @@ import { SendNotfiCationOnPhone } from "@/lib/tools/Phone/Send-Notification-on-p
 import { BirthdayToolNodeCronjob } from "@/lib/tools/Phone/Send-birthday-remainder";
 import { SaveMemory } from "@/lib/tools/Memory/Save-Memory";
 import { oAuthClient } from "@/lib/google-auth/oauth-client";
+import IsOwner from "@/lib/auth/isOwner";
+import { rateLimit } from "@/lib/RateLimit";
+import { ipAddress, waitUntil } from "@vercel/functions";
 
  
 
 // Main LLM (openAI)
-const llmModel = new ChatOpenAI({ apiKey: process.env.OPENAI_AI_KEY, model: "gpt-4o" });
+const llmModel = new ChatOpenAI({ apiKey: process.env.OPENAI_AI_KEY, model: "gpt-4o"  , maxTokens: 150});
 
 const state = new StateSchema({
   messages: MessagesValue,
@@ -68,7 +71,10 @@ const llmCall = async(state:any) => {
 
     // console.log("messages value" , MessagesValue)
   
-    const memories = await Memory.find({}) 
+    const owner = await IsOwner()
+
+
+    const memories = owner ? await Memory.find({}) : [] // for the vistors
 
     // console.log("Memories found " , memories)
 const UserContext = memories.map((e) => `- [${e.category}] ${e.fact} , ${e.createdAt.toLocaleString()}`).join("\n");
@@ -81,6 +87,8 @@ const UserContext = memories.map((e) => `- [${e.category}] ${e.fact} , ${e.creat
 You are Jarvis, an email assistant of Athashri Keny.
 The current date and time is ${today} (IST).
 
+NOTE: WHILE CALLING THE TOOLNODE IF THE USER IS NULL 
+THEN RETURN IN THE RESPONSE THAT YOU ARE NOT THE OWNER CANT ACCESS THE PRIVATE  OF THE USER WITH THE STATUS 200
 
 
 EMAIL RULES
@@ -162,8 +170,30 @@ const toolNode = async(state:any) => {
 
     console.log("Numbeer of Tools requested by the llm" , lastMessage.tool_calls?.length)
 
-  // looping through the toolcalls to call the a singal tool 
+
+         const user =  await IsOwner()
+
+
+         console.log("user from toolNode" , user )
+
+  // looping through the toolcalls to call the a single tool 
     for(const toolCall of lastMessage.tool_calls ?? []) {
+
+      // console.log("ToolCall id" , toolCall.id)
+      // console.log("ToolCall" , toolCall)
+
+      if (user === false) {
+        results.push(
+          new ToolMessage({
+            tool_call_id: toolCall.id || "",
+            content: "Access denied. The person chatting with you right now is a visitor, not the owner of this assistant. " +
+    "Tell the visitor (use 'you') that you can't access private data like emails or calendar for them, " +
+    "because this assistant is private to its owner"
+          })
+        )
+        continue // continue the loop 
+      }
+
 
         // looking for the which tool to call fetching it by name (accessing it)
         const tool = toolsbyName[toolCall.name] as any // this contains the whole tool
@@ -207,12 +237,50 @@ export async function POST(req: NextRequest) {
     
 
     try {
+
+
+      const owner = await IsOwner()
         
 
     const {message} = await req.json()
 
     console.log("Message recevied from frontend" , message)
 
+
+
+    // RATE LIMITER
+
+    const identifier = ipAddress(req) ?? "no-ip-address found"
+
+    console.log("Ip address" , identifier)
+
+    // Counts the visitor’s requests in Redis and decides allowed or blocked
+    const {success , limit , remaining , pending} = await rateLimit.limit(identifier)
+
+    console.log("Success" , success)
+    console.log("limit" , limit)
+    console.log("remaning" , remaining)
+    // console.log("Pending" , pending)
+
+    const response = {
+      success,
+      limit,
+      remaining,
+      pending
+    }
+
+
+
+// the pending meaning is the request was accepted or rejected (to show it in dashboard)
+waitUntil(pending) // vercel stayes alive until this finishes.  
+//  console.log("Pending after waituntil" , pending)
+
+if (success === false) {
+  return NextResponse.json({
+    message: "Too many requests",
+    response
+  } , {status: 429})
+}
 
     // this Readble Stream always required the data in bytes not in string
     const stream: any = new ReadableStream({
@@ -227,7 +295,7 @@ export async function POST(req: NextRequest) {
         {
             streamMode: "messages",
             // giving the chat therad_id 
-             configurable: {thread_id: '1'}, 
+             configurable: {thread_id: owner ? '1' : '2' }, 
         })
     )
     // NOTE: here the  MessageChunk is a instance of AIMessageChunk (reply from the ai)
@@ -237,10 +305,11 @@ if (MessageChunk.getType() === 'ai') {
         // console.log("MessageChunkk" , messageChunk)
         controller.enqueue(encoder.encode(MessageChunk.content)) // this is converts into numbers (ASCII value) and pushing the each word immediately
       }
-    
+
     // closing the controller 
     controller.close()
 }
+
 })
    return new NextResponse(stream, {
   headers: {"Content-Type": "text/plain; charset=utf-8"}

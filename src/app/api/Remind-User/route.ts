@@ -1,11 +1,11 @@
 import { createAgent } from "langchain";
-
 import { HumanMessage } from '@langchain/core/messages'
 import { NextResponse , NextRequest } from 'next/server'
 import { Send_BirthDay_wish_On_Whatapp } from "@/lib/tools/birthday/Send-birthday-wish";
 import { SendNotfiCationOnPhone } from "@/lib/tools/Phone/Send-Notification-on-phone";
 import { BirthdayToolNodeCronjob } from "@/lib/tools/Phone/Send-birthday-remainder";
 import { ChatOpenAI } from "@langchain/openai";
+
 
 export async function POST(req_: NextRequest) {
     try {
@@ -41,7 +41,7 @@ const Agent =  createAgent({
     })
 
    const res =  await Agent.invoke({
-        messages: [new HumanMessage(`Run the birthday check`)]
+        messages: [new HumanMessage(`Run the todays birthday check`)]
     })
 
 //      const res =  await agent.invoke(

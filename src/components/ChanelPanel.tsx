@@ -198,6 +198,7 @@ export function ChatPanel({
           aria-label="Message Jarvis"
           autoComplete="off"
           className="h-12 rounded-2xl border-white/10 bg-zinc-900/70 px-4 text-white placeholder:text-zinc-500 focus-visible:border-cyan-400/60 focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+          maxLength={50}
         />
         <button
           type="submit"

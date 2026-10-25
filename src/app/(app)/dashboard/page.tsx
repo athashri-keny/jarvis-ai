@@ -7,11 +7,11 @@ import { Input } from '@/components/ui/input'
 import { Message, MessageAvatar, MessageContent } from '@/components/ui/message'
 import axios from 'axios'
 import React, { useState } from 'react'
-
+import { toast, Toaster } from '@/components/ui/toast'
 
 
     type ChatMessage = {
-        role: "Human" | 'AI',
+        role: "Human" | 'AI' | "System",
         content: string
     }
 
@@ -20,6 +20,8 @@ function Dashboard() {
 
       const [messages , setmessages] = useState<ChatMessage[]>([]) // Array
       const [input , setinput] = useState("") 
+      const [error , seterror] = useState("")
+
 
     const chat = async() => {
 
@@ -36,6 +38,15 @@ function Dashboard() {
       body: JSON.stringify({message: userMessage})
     })
     // NOTE: here an the res.body async iterable, NOT an array meaning the word is coming 
+
+    if (res.status === 429) {
+      seterror("Error too many request"),
+        setmessages((prev) => [...prev , {role: 'System' , content: 'Too many messages ChatBot limit reached! Please try again later'}])
+      toast.add({
+        title: "Error to many messsage plz try again later"
+      })
+      return
+    }
 
             // converting the ASSCI value into the normal string format
             const decode = new TextDecoder()
@@ -64,9 +75,15 @@ function Dashboard() {
                 return updated
               })
             }
+            
         
         } catch (error) {
             console.log("Error while chatting"  , error)
+            seterror("Err")
+            toast.add({
+              title: "Error while chatting"
+            })
+            
         }
     }
 
