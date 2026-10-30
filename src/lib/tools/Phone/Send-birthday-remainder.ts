@@ -21,9 +21,9 @@ const startOfTomorrow = new Date(startOfToday.getTime() + 86400000);
 
 const events: any = await Calender.events.list({
     calendarId: 'primary',
-    // timeMin: startOfToday.toISOString(),
+    timeMin: startOfToday.toISOString(),
     singleEvents: true,
-    // timeMax: startOfTomorrow.toISOString(), // 10 days from now 
+    timeMax: startOfTomorrow.toISOString(), // 10 days from now 
     orderBy: 'startTime',
     eventTypes: ['birthday'] // add further events if needed
   })

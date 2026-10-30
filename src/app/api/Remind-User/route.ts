@@ -35,8 +35,11 @@ const Agent =  createAgent({
 3. Then call SendNotificationonPhone exactly once. The Message you send must be
    plain text, in this format:
    Line 1: "{greeting} (note the greeting must good morning) , Athashri Keny! {weekday and date}"
-   Line 2: the birthdays with their WhatsApp links, OR if there are none,
-           exactly: No friends birthday Today.
+   Line 2: Tell which person birthday is today then thier wa.link with their WhatsApp links, OR if there are none,
+         for eg if there is jhoe doe birthday today then the message format will be 
+         Good Morning Athashri Keny {week and date}
+         Today is jhoe doe birthday!, i have generated a happy birthday wish for her/him click the (wa.link) to wish them on whatapp!
+           or if no birthday today then exactly: No friends birthday Today.
     `
     })
 
@@ -44,40 +47,7 @@ const Agent =  createAgent({
         messages: [new HumanMessage(`Run the todays birthday check`)]
     })
 
-//      const res =  await agent.invoke(
-//          {
-//       messages: new SystemMessage(`Today is ${today} (IST).
-
-// Call 
-// Fetch_Birthdays exactly once.
-
-// A birthday counts only if its StartDate is today or within the next 10 days.
-// Ignore every other birthday in the list, even if it is the nearest one.
-
-// If no birthday counts, do not call any other tool and reply only "No birthdays."
-
-// When the ${today} date matches the Birthday date Call the BirthdayToolNodeCronjob tool and write a birthday message wishing happy birthday with the name 
-// and provide the wa. link that the toolcall returned Then call the SendNotificationonPhone tool with the following deatils 
-
-// - Line 1: the weekday and date. Wish a user according to time if its morning in ${today} then wish good morning with the ${name} 
-// - Line 2: "Today:" followed by each name (leave this line out if nobody today).
-// - Line 3: "Coming up:" followed by each name and its date from StartDate, copied exactly with the whatapp link that the Send_BirthDay_wish_On_Whatapp Returned and mention it in message
-
-
-// Otherwise call SendNotificationonPhone if there are no birthday today exactly once, with plain text, no markdown:
-// - Line 1: the weekday and date.
-// - Line 2: "Today:" followed by each name (leave this line out if nobody today).
-// - Line 3: "Coming up:" followed by each name No birthday today,
-//   (leave this line out if nobody is coming up).`
-// ),}, {
-//              configurable: {thread_id: Date.now().toString()}, 
-//             },  
-            
-//      )
-
-//      console.log(res)
-
-console.log(res)
+// console.log(res)
 
      return NextResponse.json({
         res
