@@ -7,7 +7,7 @@ import { BirthdayToolNodeCronjob } from "@/lib/tools/Phone/Send-birthday-remaind
 import { ChatOpenAI } from "@langchain/openai";
 
 
-export async function POST(req_: NextRequest) {
+export async function handler(req_: NextRequest) {
     try {
         
   const today = new Date().toLocaleString("en-IN", {
@@ -63,5 +63,6 @@ const Agent =  createAgent({
 }
 
 
+export { handler as GET, handler as POST };
 
 
